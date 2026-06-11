@@ -90,6 +90,22 @@ jobs:
         run: |
           python -m pytest test_organ.py -v --tb=short
 
+      - name: CLI adapter round-trip (python organ.py < sample)
+        run: |
+          set -euo pipefail
+          for sample in samples/*.json; do
+            name="$(basename "$sample")"
+            out="$(python organ.py < "$sample")"
+            echo "$out" | python -c "
+          import json, sys
+          r = json.load(sys.stdin)
+          assert set(r) == {'output', 'rationale', 'self_metric'}, r.keys()
+          assert r['output']['action'] in ('process', 'reject', 'skip')
+          assert 0.0 <= r['self_metric']['confidence'] <= 1.0
+          print('$name CLI ->', r['output']['action'], '/', r['output']['tenant_action'])
+          "
+          done
+
       - name: Check output shape
         run: |
           python -c "
@@ -147,7 +163,7 @@ jobs:
               elif isinstance(node, ast.ImportFrom):
                   imports.append(node.module)
 
-          stdlib_allowed = {'__future__', 'typing', 'hashlib', 'hmac', 'json'}
+          stdlib_allowed = {'__future__', 'typing', 'hashlib', 'hmac', 'json', 'os', 'sys'}
           external = [imp for imp in imports if imp and imp not in stdlib_allowed]
 
           assert not external, f'Non-stdlib imports found: {external}'

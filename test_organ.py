@@ -222,6 +222,72 @@ class TestPurity(unittest.TestCase):
         self.assertTrue(out["verified"])
 
 
+class TestBillingStateOutput(unittest.TestCase):
+    """The additive `billing_state` output port (vocab type BillingState).
+
+    Pins that the organ emits the spine-connectable {tier,status,features}
+    state the vocabulary assigns it (BillingState.produced_by_eg lists this
+    organ → consumed by organ-feature-gates) — non-null on processed
+    activate/cancel events, None when no tenant mutation is authorised.
+    """
+
+    def test_billing_state_key_always_present(self):
+        # Present on every path so a typed consumer can always read the port.
+        for state, context in (
+            ({}, {}),  # skip
+            _webhook(_ACTIVATION),  # activate
+        ):
+            self.assertIn("billing_state", decide(state, context)["output"])
+
+    def test_activate_emits_active_billing_state(self):
+        out = decide(*_webhook(_ACTIVATION))["output"]
+        self.assertEqual(out["tenant_action"], "activate")
+        bs = out["billing_state"]
+        self.assertIsInstance(bs, dict)
+        self.assertEqual(bs["tier"], "pro")  # px_pro → pro
+        self.assertEqual(bs["status"], "active")
+        self.assertEqual(bs["features"], [])
+        # billing_state.tier tracks the decision's resolved_plan.
+        self.assertEqual(bs["tier"], out["resolved_plan"])
+
+    def test_cancel_emits_cancelled_billing_state(self):
+        cancel = {"id": "evt_c", "name": "subscription.cancelled",
+                  "data": {"customer_id": "cus_42"}}
+        out = decide(*_webhook(cancel))["output"]
+        self.assertEqual(out["tenant_action"], "cancel")
+        bs = out["billing_state"]
+        self.assertEqual(bs["tier"], "free")
+        self.assertEqual(bs["status"], "cancelled")
+        self.assertEqual(bs["features"], [])
+
+    def test_no_mutation_events_emit_null_billing_state(self):
+        # Payment confirmation → process but no tenant state change.
+        payment = {"id": "evt_p", "name": "payment.succeeded",
+                   "data": {"customer_id": "cus_42"}}
+        out = decide(*_webhook(payment))["output"]
+        self.assertEqual(out["tenant_action"], "none")
+        self.assertIsNone(out["billing_state"])
+
+    def test_reject_and_skip_emit_null_billing_state(self):
+        # Bad signature → reject; empty state → skip. Neither mutates a tenant.
+        state, context = _webhook(_ACTIVATION)
+        state["signature"] = "deadbeef" * 8
+        self.assertIsNone(decide(state, context)["output"]["billing_state"])
+        self.assertIsNone(decide({}, {})["output"]["billing_state"])
+
+    def test_billing_state_conforms_to_vocab_schema(self):
+        # Whenever non-null, billing_state matches the BillingState schema keys.
+        import json as _json
+        from pathlib import Path
+
+        vocab = _json.loads(
+            (Path(__file__).resolve().parent / "types.json").read_text()
+        )["types"]
+        schema_keys = set(vocab["BillingState"]["schema"].keys())
+        out = decide(*_webhook(_ACTIVATION))["output"]
+        self.assertEqual(set(out["billing_state"].keys()), schema_keys)
+
+
 class TestPortManifest(unittest.TestCase):
     """The connection-standard port manifest (ports.json) conforms.
 

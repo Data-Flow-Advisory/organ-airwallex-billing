@@ -1,0 +1,15 @@
+{
+  "state": {
+    "payload": "{\"id\": \"evt_0a1b2c3d\", \"name\": \"subscription.activated\", \"data\": {\"id\": \"sub_xyz789\", \"customer_id\": \"cus_tenant42\", \"items\": [{\"price_id\": \"px_pro_live\", \"quantity\": 1}]}}",
+    "signature": "7d4974f414207dddb1ca4151a3d261abc35b362a4eda521e215a1b4fd808de5d",
+    "timestamp": "1718064000"
+  },
+  "context": {
+    "webhook_secret": "whsec_test_airwallex_abc123",
+    "price_ids": {
+      "starter": "px_starter_live",
+      "pro": "px_pro_live",
+      "enterprise": "px_ent_live"
+    }
+  }
+}

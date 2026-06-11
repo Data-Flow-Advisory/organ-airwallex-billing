@@ -1,0 +1,13 @@
+{
+  "state": {
+    "payload": "{\"id\": \"evt_cancel01\", \"name\": \"subscription.cancelled\", \"data\": {\"id\": \"sub_xyz789\", \"customer_id\": \"cus_tenant42\"}}",
+    "signature": "",
+    "timestamp": ""
+  },
+  "context": {
+    "webhook_secret": "",
+    "price_ids": {
+      "pro": "px_pro_live"
+    }
+  }
+}

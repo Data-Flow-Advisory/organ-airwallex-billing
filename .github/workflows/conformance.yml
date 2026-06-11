@@ -1,0 +1,181 @@
+name: Conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip pytest
+
+      - name: Check pure organ contract
+        run: |
+          python -c "
+          from organ import decide
+          import inspect
+
+          sig = inspect.signature(decide)
+          params = list(sig.parameters.keys())
+          assert params == ['state', 'context'], f'Expected (state, context), got {params}'
+
+          print('decide(state, context) signature correct')
+          "
+
+      - name: Test empty state (fail-safe)
+        run: |
+          python -c "
+          from organ import decide
+          result = decide({}, {})
+
+          assert 'output' in result
+          assert 'rationale' in result
+          assert 'self_metric' in result
+          assert 'confidence' in result['self_metric']
+
+          conf = result['self_metric']['confidence']
+          assert 0.0 <= conf <= 1.0, f'Confidence {conf} out of range'
+          assert result['output']['action'] == 'skip'
+          assert result['output']['tenant_action'] == 'none'
+
+          print(f'Empty state handled (confidence: {conf})')
+          "
+
+      - name: Test with sample states
+        run: |
+          python -c "
+          from organ import decide
+          import json
+          from pathlib import Path
+
+          expected = {
+              'verified_activation.json': ('process', 'activate'),
+              'unverified_cancellation.json': ('process', 'cancel'),
+              'bad_signature.json': ('reject', 'none'),
+          }
+          samples_dir = Path('samples')
+          for name, (want_action, want_tenant) in expected.items():
+              with open(samples_dir / name) as f:
+                  sample = json.load(f)
+              result = decide(sample.get('state', {}), sample.get('context', {}))
+              out = result['output']
+
+              assert isinstance(out, dict)
+              assert out['action'] in ('process', 'reject', 'skip')
+              assert 0.0 <= result['self_metric']['confidence'] <= 1.0
+              assert out['action'] == want_action, \
+                  f'{name}: expected action {want_action}, got {out[\"action\"]}'
+              assert out['tenant_action'] == want_tenant, \
+                  f'{name}: expected tenant_action {want_tenant}, got {out[\"tenant_action\"]}'
+
+              print(f'{name}: {out[\"action\"]}/{out[\"tenant_action\"]} (confidence: {result[\"self_metric\"][\"confidence\"]})')
+          "
+
+      - name: Run unit tests
+        run: |
+          python -m pytest test_organ.py -v --tb=short
+
+      - name: Check output shape
+        run: |
+          python -c "
+          from organ import decide
+          import json
+
+          event = {'id': 'e', 'name': 'subscription.activated',
+                   'data': {'customer_id': 'c', 'items': [{'price_id': 'px_pro'}]}}
+          result = decide({'event': event}, {'price_ids': {'pro': 'px_pro'}})
+          out = result['output']
+
+          required = {'action', 'verified', 'secret_configured',
+                      'record_unverified_audit', 'event_type', 'event_id',
+                      'customer_id', 'tenant_action', 'resolved_plan',
+                      'http_status_hint'}
+          assert required.issubset(out.keys()), f'missing: {required - set(out.keys())}'
+          assert out['action'] in {'process', 'reject', 'skip'}
+          assert out['tenant_action'] in {'activate', 'cancel', 'none'}
+          assert isinstance(out['verified'], bool)
+          assert isinstance(out['record_unverified_audit'], bool)
+          assert isinstance(out['http_status_hint'], int)
+
+          print(f'Output shape valid (action={out[\"action\"]})')
+          "
+
+      - name: Check determinism
+        run: |
+          python -c "
+          from organ import decide
+
+          event = {'id': 'e', 'name': 'subscription.cancelled', 'data': {'customer_id': 'c'}}
+          state = {'event': event}
+          context = {'price_ids': {'pro': 'px_pro'}}
+
+          r1 = decide(state, context)
+          r2 = decide(state, context)
+
+          assert r1 == r2, 'organ is not deterministic'
+          print('Organ is deterministic (same input -> same output)')
+          "
+
+      - name: Check no external dependencies
+        run: |
+          python -c "
+          import ast
+
+          with open('organ.py') as f:
+              tree = ast.parse(f.read())
+
+          imports = []
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  for alias in node.names:
+                      imports.append(alias.name)
+              elif isinstance(node, ast.ImportFrom):
+                  imports.append(node.module)
+
+          stdlib_allowed = {'__future__', 'typing', 'hashlib', 'hmac', 'json'}
+          external = [imp for imp in imports if imp and imp not in stdlib_allowed]
+
+          assert not external, f'Non-stdlib imports found: {external}'
+          print(f'Pure organ: stdlib-only (imports: {imports})')
+          "
+
+      - name: Summary
+        run: |
+          python -c "
+          from organ import decide
+          import json
+
+          event = {'id': 'evt_1', 'name': 'subscription.activated',
+                   'data': {'customer_id': 'cus_42', 'items': [{'price_id': 'px_pro'}]}}
+          result = decide({'event': event}, {'price_ids': {'pro': 'px_pro'}})
+
+          print()
+          print('=' * 50)
+          print('ORGAN CONFORMANCE VERIFIED')
+          print('=' * 50)
+          print('Return shape: ok')
+          print('Pure function: ok')
+          print('Deterministic: ok')
+          print('Fail-safe on empty state: ok')
+          print('Stdlib-only: ok')
+          print()
+          print(f'Test run action: {result[\"output\"][\"action\"].upper()}')
+          print(f'Tenant action: {result[\"output\"][\"tenant_action\"]} (plan={result[\"output\"][\"resolved_plan\"]})')
+          print(f'Confidence: {result[\"self_metric\"][\"confidence\"]:.1%}')
+          print('=' * 50)
+          "

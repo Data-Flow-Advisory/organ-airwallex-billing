@@ -1,0 +1,13 @@
+{
+  "state": {
+    "payload": "{\"id\": \"evt_bad\", \"name\": \"subscription.activated\", \"data\": {\"customer_id\": \"cus_tenant42\"}}",
+    "signature": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "timestamp": "1718064000"
+  },
+  "context": {
+    "webhook_secret": "whsec_test_airwallex_abc123",
+    "price_ids": {
+      "pro": "px_pro_live"
+    }
+  }
+}

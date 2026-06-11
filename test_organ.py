@@ -222,5 +222,21 @@ class TestPurity(unittest.TestCase):
         self.assertTrue(out["verified"])
 
 
+class TestPortManifest(unittest.TestCase):
+    """The connection-standard port manifest (ports.json) conforms.
+
+    Mirrors check_ports.py so the manifest is validated under the standard
+    ``pytest test_organ.py`` run, not only the dedicated CI step: ports.json
+    parses and is well-formed, every declared type exists in the vocabulary
+    (types.json), and decide() reads each declared input name and writes each
+    declared output name against the organ's own samples.
+    """
+
+    def test_ports_manifest_conforms(self):
+        import check_ports
+
+        check_ports.main()  # raises AssertionError on any violation
+
+
 if __name__ == "__main__":
     unittest.main()

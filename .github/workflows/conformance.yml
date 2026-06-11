@@ -90,6 +90,10 @@ jobs:
         run: |
           python -m pytest test_organ.py -v --tb=short
 
+      - name: Check port manifest (connection standard)
+        run: |
+          python check_ports.py
+
       - name: Check output shape
         run: |
           python -c "

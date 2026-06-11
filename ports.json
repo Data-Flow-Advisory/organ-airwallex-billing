@@ -1,0 +1,10 @@
+{
+  "_README": "Connection-standard port manifest (orchestrator CONNECTORS.md, rollout step 2). Declares this organ's typed inputs (keys read under `state`) and outputs (the value written as `output`) against the shared type vocabulary (types.json). Two organ ports connect iff their `type` matches. Notes: (1) this is an edge/IO organ whose connection unit is the whole webhook in / whole decision out, so types are composite, not the per-field scalars. (2) The organ accepts the webhook in EITHER form — serialized on `payload` OR pre-parsed on `event` — hence two input ports of the same type, each individually optional (one-of; the standard's per-port `required` cannot express a one-of group, so both are false). The HMAC envelope fields `signature`/`timestamp` are folded into the `BillingWebhook` type schema rather than declared as standalone ports — no upstream organ produces a bare signature; it travels with the webhook. (3) The output name `*` means decide's ENTIRE `output` object is one value of the declared type (this organ emits a flat composite, not a value nested under a single key).",
+  "inputs": [
+    {"name": "payload", "type": "BillingWebhook", "required": false},
+    {"name": "event", "type": "BillingWebhook", "required": false}
+  ],
+  "outputs": [
+    {"name": "*", "type": "BillingWebhookDecision"}
+  ]
+}

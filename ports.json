@@ -1,0 +1,41 @@
+{
+  "organ": "organ-airwallex-billing",
+  "source_module": "discovery-engine app/services/airwallex_billing.py",
+  "source_symbols": [
+    "handle_webhook",
+    "_verify_signature",
+    "_resolve_plan_from_price",
+    "_handle_subscription_activated",
+    "_handle_subscription_cancelled"
+  ],
+  "contract": "decide(state, context) -> {output, rationale, self_metric}",
+  "input_ports": {
+    "state": {
+      "payload": "raw webhook body (str|bytes) — parsed + signature-verified by the organ",
+      "event": "pre-parsed event dict (caller asserts it already verified; signature check skipped)",
+      "signature": "X-Signature header (hex HMAC-SHA256)",
+      "timestamp": "X-Timestamp header"
+    },
+    "context": {
+      "webhook_secret": "AIRWALLEX_WEBHOOK_SECRET (empty selects the unverified fall-through path)",
+      "price_ids": "map of plan name -> Airwallex price_id"
+    }
+  },
+  "output_ports": {
+    "action": "process | reject | skip",
+    "verified": "bool — signature matched",
+    "secret_configured": "bool",
+    "record_unverified_audit": "bool — caller must write the security_review audit row",
+    "event_type": "str",
+    "event_id": "str | null",
+    "customer_id": "str | null",
+    "tenant_action": "activate | cancel | none",
+    "resolved_plan": "str | null",
+    "http_status_hint": "200 | 401 | 400"
+  },
+  "purity": "stdlib-only (hmac, hashlib, json, typing); deterministic; no I/O",
+  "_checked": {
+    "corpus_checked": "2026-06-11",
+    "oss_checked": "2026-06-11"
+  }
+}

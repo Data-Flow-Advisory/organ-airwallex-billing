@@ -195,6 +195,43 @@ and input non-mutation.
 Keeping the decision pure lets it run in CI, be unit-tested without Flask or a
 database, and compose with other billing organs.
 
+## Ports (connection standard)
+
+`ports.json` declares this organ's typed inputs/outputs against the shared
+type vocabulary (`types.json`), per the orchestrator's
+[`CONNECTORS.md`](https://github.com/Data-Flow-Advisory/orchestrator/blob/feat/drift-gate/CONNECTORS.md)
+— the standard coupling ("the Lego stud") that lets organs snap together by
+type rather than by hand-written adapter.
+
+| Direction | Port | Type | Notes |
+|-----------|------|------|-------|
+| input | `payload` | `BillingWebhook` | webhook serialized on the wire (str/bytes) |
+| input | `event` | `BillingWebhook` | webhook pre-parsed (object) — alternative to `payload` |
+| output | `*` | `BillingWebhookDecision` | the whole `output` object is one value of this type — the full audit-grade decision |
+| output | `billing_state` | `BillingState` | the resolved `{tier,status,features}` a processed lifecycle event authorises (additive `output.billing_state` key; `null` when no tenant mutation) — snaps into `organ-feature-gates` |
+
+This is an **edge/IO organ**: its connection unit is the whole inbound webhook
+in and the whole decision out, so the ports are composite types, not the
+per-field scalars. `BillingWebhook` and `BillingWebhookDecision` are **proposed
+additions** to the shared vocabulary (vendored here so CI is hermetic; see the
+manifest PR). The HMAC envelope fields `signature`/`timestamp` are folded into
+the `BillingWebhook` schema rather than declared as standalone ports.
+
+The second output port, **`billing_state`**, is the connection-standard product
+the vocabulary assigns this organ — `BillingState.produced_by_eg` already lists
+`organ-airwallex-billing`, consumed by `organ-feature-gates`. The organ exposes
+it as an additive nested key on the same flat `output` (the `*` port's subset
+check tolerates the extra key), so it carries **both** its full webhook decision
+**and** the spine-connectable subscription state without restructuring. It is
+`null` on payment confirmations, unknown events, rejects and skips (no tenant
+mutation), and `{tier,status,features:[]}` on processed activate/cancel events
+(`organ-feature-gates` derives feature entitlements from the tier).
+
+`check_ports.py` asserts the manifest parses, every declared type exists in the
+vocabulary, and `decide()` reads each declared input name and writes each
+declared output name (against this organ's own samples). It runs in the
+conformance Action and under `pytest test_organ.py`.
+
 ## License
 
 Part of the Data-Flow-Advisory platform. See parent repo for license.

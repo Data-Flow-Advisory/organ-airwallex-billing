@@ -48,6 +48,10 @@ _CANCEL_EVENTS = ("subscription.cancelled",)
 # Payment confirmations are logged only — no tenant mutation in the source.
 _PAYMENT_EVENTS = ("payment.succeeded", "payment_intent.succeeded")
 
+# Subscription status strings carried on the derived BillingState output.
+_STATUS_ACTIVE = "active"
+_STATUS_CANCELLED = "cancelled"
+
 
 def decide(state: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """Decide how to handle an inbound Airwallex billing webhook.
@@ -92,6 +96,11 @@ def decide(state: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
                 "tenant_action":          "activate" | "cancel" | "none",
                 "resolved_plan":          str | None,
                 "http_status_hint":       int,    # 200 | 401 | 400
+                "billing_state":          {"tier": str, "status": str,
+                                           "features": []} | None,
+                                          # vocab `BillingState`; None when no
+                                          # tenant mutation is authorised. Snaps
+                                          # into organ-feature-gates.
             },
             "rationale": str,
             "self_metric": {"confidence": 0.0-1.0},
@@ -175,6 +184,12 @@ def decide(state: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         "tenant_action": tenant_action,
         "resolved_plan": resolved_plan,
         "http_status_hint": 200,
+        # Connection-standard product: the resolved subscription state this
+        # webhook authorises, typed as the shared-vocabulary `BillingState`
+        # so the decision snaps directly into `organ-feature-gates` (the
+        # vocabulary's declared consumer). None when the event mutates no
+        # tenant state (payment confirmation / unknown / reject / skip).
+        "billing_state": _billing_state(tenant_action, resolved_plan),
     }
 
     rationale = _build_rationale(
@@ -208,7 +223,37 @@ def _skip_output() -> Dict[str, Any]:
         "tenant_action": "none",
         "resolved_plan": None,
         "http_status_hint": 200,
+        # No tenant mutation on a skip/reject → no resolved billing state.
+        "billing_state": None,
     }
+
+
+def _billing_state(
+    tenant_action: str, resolved_plan: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Derive the shared-vocabulary ``BillingState`` this webhook authorises.
+
+    ``BillingState`` is ``{tier, status, features}`` (types.json). This organ
+    resolves the *tier* (the plan) and the lifecycle *status*; it does not
+    enumerate feature entitlements — ``organ-feature-gates`` derives those
+    from the tier — so ``features`` is emitted as an empty list. Returns
+    ``None`` for events that mutate no tenant state (payment confirmations,
+    unknown events), so a downstream consumer can distinguish "no change"
+    from a real subscription transition.
+    """
+    if tenant_action == "activate":
+        return {
+            "tier": resolved_plan or _DEFAULT_PLAN,
+            "status": _STATUS_ACTIVE,
+            "features": [],
+        }
+    if tenant_action == "cancel":
+        return {
+            "tier": resolved_plan or _CANCELLED_PLAN,
+            "status": _STATUS_CANCELLED,
+            "features": [],
+        }
+    return None
 
 
 def _verify_signature(

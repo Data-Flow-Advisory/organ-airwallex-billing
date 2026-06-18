@@ -1,0 +1,86 @@
+{
+  "_README": "Vendored copy of the orchestrator shared connection-type vocabulary (orchestrator@feat/drift-gate types.json), extended with the two edge types this organ needs. Two organ ports connect iff their `type` matches. Curated deliberately: a new type is added only when no existing one fits (sprawl defeats the standard). Each type pins the shape that flows on that wire. See CONNECTORS.md. The organ's CI validates ports.json against THIS local copy so the check stays hermetic; the two `*_LOCAL_PROPOSED` types below are proposed for upstream review (see PR body) and should be folded into the orchestrator vocabulary.",
+  "version": 1,
+  "types": {
+    "TenantContext": {
+      "desc": "A resolved tenant: identity, branding, provenance bag.",
+      "schema": {"tenant_id": "int", "slug": "str", "brand": "object", "provenance": "object"},
+      "produced_by_eg": ["organ-tenant"], "consumed_by_eg": ["organ-branding", "organ-system-blueprint"]
+    },
+    "SiteCrawl": {
+      "desc": "Signals crawled from a prospect's website at signup.",
+      "schema": {"url": "str", "industry": "str", "competitors": "array", "palette": "array", "description": "str"},
+      "produced_by_eg": ["organ-site-crawl"], "consumed_by_eg": ["organ-branding", "organ-tenant"]
+    },
+    "InterviewTranscript": {
+      "desc": "Ordered Q&A pairs from a discovery interview.",
+      "schema": {"interview_id": "int", "qa": "array<{question:str,answer:str,asked_at:str}>"},
+      "produced_by_eg": ["organ-claude-service"], "consumed_by_eg": ["organ-fact-extractor", "organ-process-flow"]
+    },
+    "KeyFacts": {
+      "desc": "Themed facts extracted from a transcript (the discovery memory).",
+      "schema": {"facts": "array<{theme:str,fact:str,evidence:array}>"},
+      "produced_by_eg": ["organ-fact-extractor"], "consumed_by_eg": ["organ-system-blueprint", "organ-entity-deduplication-service"]
+    },
+    "EntityGraph": {
+      "desc": "Deduplicated canonical entities (people, systems, tools) per tenant.",
+      "schema": {"entities": "array<{canonical:str,aliases:array,kind:str}>"},
+      "produced_by_eg": ["organ-entity-deduplication-service"], "consumed_by_eg": ["organ-system-blueprint"]
+    },
+    "Blueprint": {
+      "desc": "The system blueprint: modules + integrations + current/recommended state.",
+      "schema": {"modules": "array<{name:str,integrations:array,screen_concept:str}>", "integrations": "array<{name:str,purpose:str}>"},
+      "produced_by_eg": ["organ-system-blueprint"], "consumed_by_eg": ["organ-solutions-engine", "organ-react-flow-blueprint", "organ-pdf-report"]
+    },
+    "RecommendationList": {
+      "desc": "SaaS + bespoke-build recommendations, competitor-weighted.",
+      "schema": {"recommendations": "array<{name:str,purpose:str,kind:str}>"},
+      "produced_by_eg": ["organ-solutions-engine"], "consumed_by_eg": ["organ-pdf-report"]
+    },
+    "ProcessFlow": {
+      "desc": "Sequence / swimlane of a workflow extracted from transcript themes.",
+      "schema": {"steps": "array<{actor:str,action:str,system:str}>"},
+      "produced_by_eg": ["organ-process-flow"], "consumed_by_eg": ["organ-react-flow-blueprint"]
+    },
+    "AccountState": {
+      "desc": "A fleet account's pacing/quota state (the pace + drift gates' input).",
+      "schema": {"utilization_pct": "number", "resets_at": "str", "tier_cap_4h": "int"},
+      "produced_by_eg": ["organ-account-health"], "consumed_by_eg": ["organ-pace-gate", "organ-drift-gate", "organ-burn-pacing"]
+    },
+    "PendingItems": {
+      "desc": "Work items awaiting prioritisation (APES input).",
+      "schema": {"items": "array<{id:any,atoms:object}>"},
+      "produced_by_eg": ["organ-feed-adapters-github-adapter"], "consumed_by_eg": ["organ-prioritiser"]
+    },
+    "RankedItems": {
+      "desc": "APES-ranked items + human-decision / culled buckets.",
+      "schema": {"ranked": "array", "human_decision": "array", "culled": "array"},
+      "produced_by_eg": ["organ-prioritiser"], "consumed_by_eg": ["organ-queue-admission"]
+    },
+    "ClaimVerdict": {
+      "desc": "Whether a worker may claim work now, and why (gate output).",
+      "schema": {"allow": "bool", "reason": "str"},
+      "produced_by_eg": ["organ-pace-gate", "organ-drift-gate", "organ-queue-admission"], "consumed_by_eg": ["organ-claim-router"]
+    },
+    "BillingState": {
+      "desc": "A tenant's subscription / billing state + feature entitlements.",
+      "schema": {"tier": "str", "status": "str", "features": "array"},
+      "produced_by_eg": ["organ-airwallex-billing", "organ-billing-provider"], "consumed_by_eg": ["organ-feature-gates"]
+    },
+    "ConformanceVerdict": {
+      "desc": "Whether an organ/output conforms + groundedness (self_metric shape).",
+      "schema": {"conforms": "bool", "confidence": "number", "reasons": "array"},
+      "produced_by_eg": ["organ-readiness"], "consumed_by_eg": []
+    },
+    "BillingWebhook": {
+      "desc": "PROPOSED (this organ's input edge type). A raw inbound billing-provider webhook: the event body (id/name/data) plus the HMAC envelope auth (signature/timestamp). Carried either serialized on the `payload` wire (str) or pre-parsed on the `event` wire (object). The substrate's effect runner is what actually receives the HTTP POST and presents it as this type — an IO contract per CONNECTORS.md.",
+      "schema": {"id": "str", "name": "str", "data": "object", "signature": "str", "timestamp": "str"},
+      "produced_by_eg": ["organ-io-airwallex-webhook"], "consumed_by_eg": ["organ-airwallex-billing"]
+    },
+    "BillingWebhookDecision": {
+      "desc": "PROPOSED (this organ's output edge type). The decision a single inbound billing webhook authorises: process/reject/skip + HTTP status hint, signature-verification trust + whether a security_review audit row is owed, the parsed event identity, and the tenant lifecycle action (activate with resolved plan / cancel / none). This is the full audit-grade decision consumed by a webhook router. Distinct from `BillingState` ({tier,status,features}): the organ ALSO emits a `billing_state` output port of the vocabulary's `BillingState` type (the additive `output.billing_state` key — non-null on processed activate/cancel events) so it snaps directly into organ-feature-gates, matching `BillingState.produced_by_eg`. The two output ports coexist: `*` is the whole decision for the router; `billing_state` is the spine-connectable subscription state.",
+      "schema": {"action": "str", "verified": "bool", "secret_configured": "bool", "record_unverified_audit": "bool", "event_type": "str", "event_id": "str", "customer_id": "str", "tenant_action": "str", "resolved_plan": "str", "http_status_hint": "int"},
+      "produced_by_eg": ["organ-airwallex-billing"], "consumed_by_eg": ["organ-billing-webhook-router"]
+    }
+  }
+}

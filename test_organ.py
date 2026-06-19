@@ -9,6 +9,9 @@ import copy
 import hashlib
 import hmac
 import json
+import pathlib
+import subprocess
+import sys
 import unittest
 
 from organ import decide
@@ -220,6 +223,44 @@ class TestPurity(unittest.TestCase):
         state = {"payload": payload.encode("utf-8"), "signature": sig, "timestamp": ts}
         out = decide(state, {"webhook_secret": _SECRET, "price_ids": _PRICE_IDS})["output"]
         self.assertTrue(out["verified"])
+
+
+class TestCliAdapter(unittest.TestCase):
+    """The CLI adapter lets the orchestrator shell out: stdin JSON -> stdout JSON."""
+
+    _ORGAN = str(pathlib.Path(__file__).parent / "organ.py")
+    _SAMPLES = pathlib.Path(__file__).parent / "samples"
+
+    def _run(self, stdin_text):
+        return subprocess.run(
+            [sys.executable, self._ORGAN],
+            input=stdin_text, capture_output=True, text=True,
+        )
+
+    def test_cli_roundtrip_on_samples(self):
+        samples = sorted(self._SAMPLES.glob("*.json"))
+        self.assertTrue(samples, "no samples found")
+        for sample in samples:
+            proc = self._run(sample.read_text())
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout)
+            self.assertEqual(set(result), {"output", "rationale", "self_metric"})
+            self.assertIn(result["output"]["action"], ("process", "reject", "skip"))
+            self.assertTrue(0.0 <= result["self_metric"]["confidence"] <= 1.0)
+
+    def test_cli_matches_decide(self):
+        sample = self._SAMPLES / "verified_activation.json"
+        data = json.loads(sample.read_text())
+        direct = decide(data.get("state") or {}, data.get("context") or {})
+        proc = self._run(sample.read_text())
+        self.assertEqual(json.loads(proc.stdout), direct)
+
+    def test_cli_empty_stdin_is_failsafe(self):
+        proc = self._run("")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(set(result), {"output", "rationale", "self_metric"})
+        self.assertEqual(result["output"]["action"], "skip")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
+import sys
 from typing import Any, Dict, Optional
 
 # Default plan used when an activation event carries a price_id we cannot map
@@ -347,3 +349,40 @@ def _compute_confidence(
         # event is unfamiliar.
         base -= 0.05
     return round(max(0.1, min(1.0, base)), 2)
+
+
+# ---------------------------------------------------------------------------
+# CLI adapter — stdin JSON in, stdout JSON out. Not part of the pure contract;
+# it lets the orchestrator shell out to this organ like any other organ:
+#     python organ.py < input.json      # input is {"state": {...}, "context": {...}}
+# ---------------------------------------------------------------------------
+
+def _read_input() -> Dict[str, Any]:
+    text = sys.stdin.read()
+    if not text.strip():
+        text = os.getenv("ORGAN_INPUT", "{}")
+    data = json.loads(text)
+    return data if isinstance(data, dict) else {}
+
+
+def main() -> int:
+    try:
+        data = _read_input()
+        result = decide(data.get("state") or {}, data.get("context") or {})
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 0
+    except Exception as exc:  # fail-safe — the CLI must never crash either.
+        out = _skip_output()
+        out["http_status_hint"] = 500
+        json.dump({
+            "output": out,
+            "rationale": f"CLI fatal error: {exc}",
+            "self_metric": {"confidence": 0.0, "error": str(exc)},
+        }, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

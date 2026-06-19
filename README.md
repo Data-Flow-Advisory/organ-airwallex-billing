@@ -137,6 +137,19 @@ elif out["tenant_action"] == "cancel":
     tenant.plan = "free"; tenant.stripe_subscription_id = None; db.session.commit()
 ```
 
+### As a CLI (stdin JSON in, stdout JSON out)
+
+So the orchestrator can shell out to this organ like any other. Input is
+`{"state": {...}, "context": {...}}`; output is `{output, rationale,
+self_metric}`:
+
+```bash
+python organ.py < samples/verified_activation.json
+```
+
+Empty stdin falls through to `$ORGAN_INPUT` (or `{}`) and returns the
+fail-safe `skip` decision rather than crashing.
+
 ### Empty state (fail-safe)
 
 ```python
